@@ -5,81 +5,221 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>어떤 재료를 사용할까요?</title>
 <style>
-  body { font-family: sans-serif; background:#f5f5f5; margin:0; padding:20px; text-align:center; }
-  h1 { margin-bottom: 10px; }
-  #wheel { width:320px; height:320px; margin:20px auto; border-radius:50%; border:6px solid #333; position:relative; }
-  #spin { margin:15px; padding:12px 24px; font-size:16px; cursor:pointer; border:none; border-radius:8px; background:#4f46e5; color:#fff; }
-  #result { font-weight:bold; margin-top:10px; font-size:18px; }
-  textarea { width:90%; max-width:400px; height:120px; margin-top:20px; padding:10px; border-radius:8px; border:1px solid #ccc; }
-  button.secondary { margin-top:8px; padding:8px 16px; border:none; border-radius:6px; background:#eee; cursor:pointer; }
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#111;--muted:#6b7280;--accent:#4f46e5;--line:#e5e7eb}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  .wrap{max-width:960px;margin:0 auto;padding:28px 16px}
+  h1{margin:8px 0 20px;font-size:28px;text-align:center}
+  .grid{display:grid;gap:20px}
+  @media(min-width:900px){.grid{grid-template-columns:520px 1fr}}
+  .card{background:var(--card);border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  .pad{padding:20px}
+
+  .wheel-wrap{position:relative;aspect-ratio:1/1;width:100%}
+  .pin{position:absolute;left:50%;transform:translateX(-50%);top:-4px;width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:24px solid #f59e0b;filter:drop-shadow(0 2px 2px rgba(0,0,0,.25))}
+  svg{width:100%;height:auto;display:block}
+
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;justify-content:center}
+  button{border:0;border-radius:12px;padding:10px 14px;font:inherit;cursor:pointer}
+  .primary{background:var(--accent);color:#fff}
+  .ghost{background:#eef2ff;color:#3730a3}
+  .danger{background:#ef4444;color:#fff}
+
+  .result{font-weight:800;font-size:24px;margin:14px 0 16px;text-align:center}
+  .muted{color:var(--muted);font-size:13px}
+  .soft-divider{height:1px;background:var(--line);margin:8px 0 14px}
+
+  .inputs-title{margin:0 0 6px;font-size:18px}
+  .inputs{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+  .input-row{display:flex;gap:8px}
+  .input-row input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit}
+  .chipbox{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .chip{background:#eef2ff;color:#3730a3;border-radius:999px;padding:6px 10px;font-size:12px}
 </style>
 </head>
 <body>
+<div class="wrap">
+  <h1>어떤 재료를 사용할까요?</h1>
+  <div class="grid">
+    <!-- Wheel -->
+    <div class="card pad">
+      <div class="wheel-wrap">
+        <div class="pin"></div>
+        <svg viewBox="-50 -50 100 100" aria-label="랜덤 돌림판">
+          <g id="slices" style="transition:transform 5s cubic-bezier(.12,.2,0,1)"></g>
+          <circle cx="0" cy="0" r="48" fill="none" stroke="#2e2e2e" stroke-width="1.5"></circle>
+          <circle cx="0" cy="0" r="6" fill="#111"></circle>
+        </svg>
+      </div>
 
-<h1>어떤 재료를 사용할까요?</h1>
+      <div class="row">
+        <button id="spin" class="primary">돌리기</button>
+        <button id="shuffle" class="ghost">색상 섞기</button>
+        <button id="reset" class="ghost">처음 상태로</button>
+      </div>
 
-<div id="wheel"></div>
-<button id="spin">돌리기</button>
-<div id="result">결과가 여기에 표시됩니다</div>
+      <div id="result" class="result">선택된 재료가 여기에 표시됩니다</div>
+      <!-- 요청: 선택된 재료와 입력영역 사이 구분선 -->
+      <div class="soft-divider"></div>
 
-<div>
-  <h3>재료 항목 편집</h3>
-  <p>기본 항목: 병뚜껑, 종이, 빨대</p>
-  <textarea id="items"></textarea><br>
-  <button class="secondary" id="apply">적용하기</button>
-  <button class="secondary" id="reset">기본값으로 리셋</button>
+      <p class="muted" style="text-align:center;margin-top:6px">입력칸을 수정하면 휠이 실시간으로 업데이트됩니다.</p>
+    </div>
+
+    <!-- Inputs -->
+    <div class="card pad">
+      <h2 class="inputs-title">재료 항목 입력</h2>
+      <div class="inputs" id="inputs"></div>
+      <div class="row">
+        <button id="add" class="ghost">항목 추가</button>
+        <button id="clear" class="danger">모두 삭제</button>
+      </div>
+      <div class="chipbox" id="chips"></div>
+    </div>
+  </div>
 </div>
 
 <script>
-  const DEFAULT_ITEMS = ["병뚜껑", "종이", "빨대"];
-  let items = [...DEFAULT_ITEMS];
-  const wheel = document.getElementById("wheel");
-  const result = document.getElementById("result");
+  // ===== 초기 항목: 입력창에 미리 들어가 있게 설정 (텍스트로 '기본항목:'은 표시하지 않음) =====
+  const INITIAL_ITEMS = ["병뚜껑","종이","빨대"];
+  let items = [...INITIAL_ITEMS];
+  let hueSeed = Math.floor(Math.random()*360);
 
-  function drawWheel() {
-    wheel.innerHTML = "";
-    const n = items.length;
-    const angle = 360 / n;
-    for (let i = 0; i < n; i++) {
-      const slice = document.createElement("div");
-      slice.style.position = "absolute";
-      slice.style.width = "50%";
-      slice.style.height = "50%";
-      slice.style.top = "50%";
-      slice.style.left = "50%";
-      slice.style.transformOrigin = "0% 0%";
-      slice.style.transform = `rotate(${i*angle}deg) skewY(${90-angle}deg)`;
-      slice.style.background = `hsl(${i*360/n},80%,70%)`;
-      wheel.appendChild(slice);
+  // DOM
+  const gSlices = document.getElementById('slices');
+  const inputsBox = document.getElementById('inputs');
+  const chipsBox  = document.getElementById('chips');
+  const resultEl  = document.getElementById('result');
+
+  // 유틸
+  const makeColors = (n, seed=0) => Array.from({length:n}, (_,i)=>`hsl(${(seed + i*(360/n))%360} 80% 68%)`);
+  const deg2rad = d => d*Math.PI/180;
+
+  // ===== 부채꼴 휠 그리기 (정확히 n등분) =====
+  function drawWheel(){
+    const n = items.length || 1;
+    const colors = makeColors(n, hueSeed);
+    gSlices.innerHTML = '';
+    const slice = 360/n;
+
+    for(let i=0;i<n;i++){
+      const start = i*slice-90, end=(i+1)*slice-90;   // 12시를 0도로 보정
+      const x1 = 48*Math.cos(deg2rad(start)), y1 = 48*Math.sin(deg2rad(start));
+      const x2 = 48*Math.cos(deg2rad(end)),   y2 = 48*Math.sin(deg2rad(end));
+      const large = slice>180?1:0;
+
+      const p = document.createElementNS('http://www.w3.org/2000/svg','path');
+      p.setAttribute('d', `M0 0 L ${x1} ${y1} A 48 48 0 ${large} 1 ${x2} ${y2} Z`);
+      p.setAttribute('fill', colors[i]);
+      gSlices.appendChild(p);
+
+      const mid = start + slice/2;
+      const rx = 30*Math.cos(deg2rad(mid)), ry = 30*Math.sin(deg2rad(mid));
+      const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', rx); t.setAttribute('y', ry);
+      t.setAttribute('text-anchor','middle');
+      t.setAttribute('dominant-baseline','middle');
+      t.setAttribute('font-size','4');
+      t.setAttribute('fill','#111');
+      const label = (items[i] ?? '').toString().trim() || '항목';
+      t.textContent = label.length>9 ? label.slice(0,9)+'…' : label;
+      gSlices.appendChild(t);
     }
   }
 
-  function spinWheel() {
-    if (!items.length) return;
-    const deg = 360 * 5 + Math.floor(Math.random() * 360);
-    wheel.style.transition = "transform 4s cubic-bezier(.17,.67,.83,.67)";
-    wheel.style.transform = `rotate(${deg}deg)`;
-    const index = Math.floor(((360 - (deg % 360)) / (360/items.length)) % items.length);
-    setTimeout(() => { result.textContent = `선택된 재료: ${items[index]}`; }, 4000);
+  // ===== 입력 UI =====
+  function rowTemplate(value='', canRemove=true){
+    const row = document.createElement('div');
+    row.className = 'input-row';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = '예: 병뚜껑';
+    input.value = value;
+    const del = document.createElement('button');
+    del.textContent = '삭제';
+    del.className = 'danger';
+    if(!canRemove){ del.disabled = true; del.style.opacity=.6; }
+    row.appendChild(input); row.appendChild(del);
+
+    // 실시간 반영
+    input.addEventListener('input', syncFromInputs);
+    // Enter로 추가
+    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ addRow(); } });
+    // 삭제
+    del.addEventListener('click', ()=>{
+      if(inputsBox.children.length<=1){ input.value=''; syncFromInputs(); return; }
+      row.remove(); syncFromInputs();
+    });
+    return row;
   }
 
-  document.getElementById("spin").addEventListener("click", spinWheel);
-  document.getElementById("apply").addEventListener("click", () => {
-    const text = document.getElementById("items").value.trim();
-    if (text) items = text.split(/\n|,/).map(s=>s.trim()).filter(Boolean);
+  function renderInputs(){
+    inputsBox.innerHTML = '';
+    (items.length? items : ['']).forEach(v=> inputsBox.appendChild(rowTemplate(v,true)));
+    renderChips();
+  }
+
+  function collectItems(){
+    return Array.from(inputsBox.querySelectorAll('input'))
+      .map(i=>i.value.trim()).filter(Boolean);
+  }
+
+  function syncFromInputs(){
+    items = collectItems();
     drawWheel();
-    result.textContent = "새 항목이 적용되었습니다!";
-  });
-  document.getElementById("reset").addEventListener("click", () => {
-    items = [...DEFAULT_ITEMS];
-    document.getElementById("items").value = items.join("\n");
-    drawWheel();
-    result.textContent = "기본 항목으로 리셋되었습니다!";
+    renderChips();
+  }
+
+  function renderChips(){
+    chipsBox.innerHTML = '';
+    items.forEach(s=>{
+      const c = document.createElement('div'); c.className='chip'; c.textContent=s;
+      chipsBox.appendChild(c);
+    });
+  }
+
+  // ===== 액션 =====
+  function addRow(value=''){
+    inputsBox.appendChild(rowTemplate(value,true));
+    inputsBox.lastChild.querySelector('input').focus();
+  }
+
+  document.getElementById('add').addEventListener('click', ()=> addRow());
+
+  document.getElementById('clear').addEventListener('click', ()=>{
+    inputsBox.innerHTML=''; items=[]; renderInputs(); drawWheel(); resultEl.textContent='항목을 입력해 주세요';
   });
 
-  // 초기화
-  document.getElementById("items").value = items.join("\n");
-  drawWheel();
+  document.getElementById('reset').addEventListener('click', ()=>{
+    items=[...INITIAL_ITEMS]; renderInputs(); drawWheel(); resultEl.textContent='처음 상태로 리셋되었습니다';
+  });
+
+  document.getElementById('shuffle').addEventListener('click', ()=>{
+    hueSeed = Math.floor(Math.random()*360); drawWheel();
+  });
+
+  // 회전 & 결과
+  document.getElementById('spin').addEventListener('click', ()=>{
+    if(!items.length){ alert('항목을 1개 이상 입력해 주세요.'); return; }
+    const n = items.length, slice = 360/n;
+    const spins = 5 + Math.random()*3;
+    const offset = Math.random()*360;
+    const deg = spins*360 + offset;
+
+    gSlices.style.transform = `rotate(${deg}deg)`;
+
+    const normalized = (deg % 360 + 360) % 360;   // 0~359
+    const fromTop = (normalized) % 360;           // 핀은 12시 방향
+    const index = Math.floor(((360 - fromTop) % 360) / slice) % n;
+    const pick = items[index];
+
+    setTimeout(()=>{ resultEl.textContent = `선택된 재료: ${pick}`; }, 5000);
+  });
+
+  // ===== 초기화 =====
+  (function init(){
+    renderInputs();
+    drawWheel();
+  })();
 </script>
 </body>
 </html>
