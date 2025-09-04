@@ -6,14 +6,15 @@
 <title>어떤 재료를 사용해 볼까요?</title>
 <style>
   :root{
-    /* 포인트 컬러: 핀/타이틀/버튼에 공통 적용 */
-    --accent:#3B82F6;
-    --bg:#f6f7f9; --card:#fff; --ink:#111; --muted:#6b7280; --line:#e5e7eb;
+    --accent:#3B82F6;                 /* 포인트 컬러(핀/버튼) */
+    --bg:#f6f7f9; --card:#fff; --ink:#111; --line:#e5e7eb;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:980px;margin:0 auto;padding:28px 16px}
-  h1{margin:8px 0 22px;font-size:32px;text-align:center;color:var(--accent)}
+  /* 타이틀을 블랙으로 */
+  h1{margin:8px 0 22px;font-size:32px;text-align:center;color:#000}
+
   .grid{display:grid;gap:20px}
   @media(min-width:900px){.grid{grid-template-columns:560px 1fr}}
 
@@ -37,8 +38,8 @@
   .ghost{background:#eef4ff;color:var(--accent)}
   .danger{background:#ef4444;color:#fff}
 
-  .result{font-weight:800;font-size:22px;margin:16px 0 12px;text-align:center}
-  .soft-divider{height:1px;background:var(--line);margin:10px 0 16px}
+  .result{font-weight:800;font-size:22px;margin:16px 0 0;text-align:center} /* 구분선 제거 → margin-bottom 0 */
+  /* .soft-divider 제거 (사용 안함) */
 
   .inputs-title{margin:0 0 6px;font-size:18px}
   .inputs{display:flex;flex-direction:column;gap:8px;margin-top:10px}
@@ -59,7 +60,6 @@
           <svg viewBox="-50 -50 100 100" aria-label="랜덤 돌림판">
             <g id="slices" style="transition:transform 5s cubic-bezier(.12,.2,0,1)"></g>
             <g id="labels" style="transition:transform 5s cubic-bezier(.12,.2,0,1)"></g>
-            <!-- 외곽선/중심점 없음 -->
           </svg>
         </div>
       </div>
@@ -70,7 +70,7 @@
       </div>
 
       <div id="result" class="result">선택된 재료가 여기에 표시됩니다</div>
-      <div class="soft-divider"></div>
+      <!-- 구분선 요소 삭제 -->
     </div>
 
     <!-- ====== 오른쪽: 입력창 ====== -->
@@ -135,7 +135,7 @@
       t.setAttribute('y', ry);
       t.setAttribute('text-anchor','middle');
       t.setAttribute('dominant-baseline','middle');
-      t.setAttribute('font-size','5.5');     // 필요하면 5~6 사이 조절
+      t.setAttribute('font-size','5.5');     // 필요시 5~6 사이 조절
       t.setAttribute('font-weight','800');
       t.setAttribute('fill', '#111');
       t.setAttribute('transform', `rotate(${angle} ${rx} ${ry})`);
@@ -190,21 +190,36 @@
     items=["병뚜껑","종이","빨대"]; renderInputs(); drawWheel(); resultEl.textContent='선택된 재료가 여기에 표시됩니다';
   });
 
-  /* ========= 회전(선택된 항목 중앙각이 12시에 오도록) ========= */
-  document.getElementById('spin').addEventListener('click', ()=>{
+  /* ========= 회전(항상 ‘처음처럼’ 크게 돌게) ========= */
+  function spinOnce(){
     if(!items.length){ alert('항목을 1개 이상 입력해 주세요.'); return; }
     const n = items.length, slice = 360/n;
     const pickIndex = Math.floor(Math.random()*n);
-    const targetAngle = pickIndex * slice;              // 시작각
-    const alignToTop = 360 - (targetAngle + slice/2);   // 중앙각을 0°(12시)로 정렬
-    const spins = 6*360;                                 // 충분한 회전
-    const deg = spins + alignToTop;
+    const targetAngle = pickIndex * slice;              // 선택 섹터 시작각
+    const alignToTop = 360 - (targetAngle + slice/2);   // 중앙각을 12시로 정렬
+    const spins = 6*360;                                // 충분히 많이
+    const finalDeg = spins + alignToTop;
 
-    gSlices.style.transform = `rotate(${deg}deg)`;
-    gLabels.style.transform = `rotate(${deg}deg)`;
+    // 💡 두 번째부터 ‘찔끔’ 문제 해결:
+    //   1) transition 제거하고 각도를 0으로 리셋
+    //   2) 리플로우 후 transition 복원하고 최종 각도로 회전
+    const tr = 'transform 5s cubic-bezier(.12,.2,0,1)';
+    gSlices.style.transition = 'none';
+    gLabels .style.transition = 'none';
+    gSlices.style.transform  = 'rotate(0deg)';
+    gLabels .style.transform = 'rotate(0deg)';
+    // 리플로우(강제 계산)
+    void gSlices.offsetWidth;
 
+    gSlices.style.transition = tr;
+    gLabels .style.transition = tr;
+    gSlices.style.transform  = `rotate(${finalDeg}deg)`;
+    gLabels .style.transform = `rotate(${finalDeg}deg)`;
+
+    // 결과 표시
     setTimeout(()=>{ resultEl.textContent = `선택된 재료: ${items[pickIndex]}`; }, 5000);
-  });
+  }
+  document.getElementById('spin').addEventListener('click', spinOnce);
 
   /* ========= 초기 렌더 ========= */
   (function init(){ renderInputs(); drawWheel(); })();
