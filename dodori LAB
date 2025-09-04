@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>랜덤 돌림판 | Dodori LAB</title>
+<style>
+  :root { --bg:#0b0c10; --card:#ffffff; --text:#111; --muted:#666; --accent:#4f46e5; }
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--text)}
+  .wrap{max-width:1040px;margin:24px auto;padding:16px}
+  .grid{display:grid;gap:20px;grid-template-columns:1fr;align-items:start}
+  @media(min-width:900px){ .grid{grid-template-columns:520px 1fr} }
+  .card{background:var(--card);border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+  .pad{padding:20px}
+  h1{font-size:22px;margin:0 0 4px}
+  p.sub{margin:0 0 16px;color:var(--muted)}
+  textarea, input, button{font:inherit}
+  textarea{width:100%;min-height:180px;border:1px solid #e5e7eb;border-radius:12px;padding:12px;resize:vertical}
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  button{border:0;border-radius:12px;padding:10px 14px;cursor:pointer}
+  .primary{background:var(--accent);color:#fff}
+  .ghost{background:#f3f4f6}
+  .danger{background:#ef4444;color:#fff}
+  .wheel-wrap{position:relative;aspect-ratio:1/1;width:100%}
+  svg{width:100%;height:auto;display:block}
+  .pin{position:absolute;inset:auto 0 100% 0;margin:auto;width:0;height:0;border-left:16px solid transparent;border-right:16px solid transparent;border-top:26px solid #f59e0b;filter:drop-shadow(0 2px 2px rgba(0,0,0,.25));top:-8px}
+  .result{font-weight:700;font-size:20px;margin-top:10px}
+  .muted{color:var(--muted);font-size:13px}
+  .footer{color:#cbd5e1;text-align:center;margin-top:14px;font-size:12px}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .chip{background:#eef2ff;color:#3730a3;border-radius:999px;padding:6px 10px;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="grid">
+    <div class="card pad">
+      <h1>랜덤 돌림판</h1>
+      <p class="sub">기본 항목으로 시작하지만, 필요하면 자유롭게 추가/수정해서 돌려보세요. 새로고침하면 다시 기본값으로 돌아옵니다.</p>
+      <div class="wheel-wrap">
+        <div class="pin"></div>
+        <svg id="wheel" viewBox="-50 -50 100 100" aria-label="랜덤 돌림판"></svg>
+      </div>
+      <div class="result" id="result">결과가 여기에 표시됩니다</div>
+      <div class="row">
+        <button id="spin" class="primary">돌리기</button>
+        <button id="reset" class="ghost">기본값으로 리셋</button>
+        <button id="shuffle" class="ghost">색상 섞기</button>
+      </div>
+      <p class="muted">팁: 항목 수가 너무 많으면 판이 촘촘해집니다. 6~14개가 보기 좋아요.</p>
+    </div>
+
+    <div class="card pad">
+      <h1>항목 편집</h1>
+      <p class="sub">한 줄에 하나씩 적어주세요. (쉼표 구분도 가능)</p>
+      <textarea id="items"></textarea>
+      <div class="row">
+        <button id="apply" class="primary">적용하기</button>
+        <button id="addSample" class="ghost">샘플 더 넣기</button>
+        <button id="clear" class="danger">전체 지우기</button>
+      </div>
+      <div class="chips" id="chips"></div>
+      <p class="muted" style="margin-top:10px">이 페이지는 정보를 저장하지 않습니다. 새로 열면 항상 기본 항목으로 시작합니다.</p>
+    </div>
+  </div>
+  <div class="footer">© Dodori LAB – Think STEAM, Create Freely</div>
+</div>
+
+<script>
+  // 1) 기본 항목 (여기를 필요에 맞게 수정하세요)
+  const DEFAULT_ITEMS = [
+    "사물 융합", "새로운 쓰임", "상상의 씨앗", "연결의 비밀",
+    "구조 세우기", "실패-수정", "과정 자랑", "자유 창작"
+  ];
+
+  // 상태
+  let items = [...DEFAULT_ITEMS];
+  let colors = [];
+
+  // DOM
+  const elWheel = document.getElementById('wheel');
+  const elItems = document.getElementById('items');
+  const elResult = document.getElementById('result');
+  const elChips = document.getElementById('chips');
+
+  // 유틸
+  const cleanList = (text) => {
+    return text.split(/\n|,/).map(s => s.trim()).filter(Boolean);
+  };
+
+  // 색상 팔레트 생성 (항목 수에 맞춰 HSL 분산)
+  const makeColors = (n, seed=0) => {
+    const arr = [];
+    for (let i=0;i<n;i++){
+      const h = (i* (360/n) + seed) % 360;
+      arr.push(`hsl(${h} 80% 65%)`);
+    }
+    return arr;
+  };
+
+  // 휠 그리기 (SVG 파이 조각)
+  const drawWheel = () => {
+    elWheel.innerHTML = ""; // reset
+    const n = items.length || 1;
+    colors = makeColors(n, Math.floor(Math.random()*360));
+    const slice = 360 / n;
+    for (let i=0;i<n;i++){
+      const start = (i*slice-90) * Math.PI/180; // SVG는 오른쪽이 0도, 위쪽 기준으로 보정
+      const end   = ((i+1)*slice-90) * Math.PI/180;
+      const x1 = 50*Math.cos(start), y1 = 50*Math.sin(start);
+      const x2 = 50*Math.cos(end),   y2 = 50*Math.sin(end);
+      const large = slice>180 ? 1 : 0;
+      const path = `M 0 0 L ${x1} ${y1} A 50 50 0 ${large} 1 ${x2} ${y2} Z`;
+      const p = document.createElementNS("http://www.w3.org/2000/svg","path");
+      p.setAttribute("d", path);
+      p.setAttribute("fill", colors[i]);
+      elWheel.appendChild(p);
+
+      // 라벨
+      const mid = (i+0.5)*slice - 90;
+      const rx = 32*Math.cos(mid*Math.PI/180);
+      const ry = 32*Math.sin(mid*Math.PI/180);
+      const t = document.createElementNS("http://www.w3.org/2000/svg","text");
+      t.setAttribute("x", rx); t.setAttribute("y", ry);
+      t.setAttribute("text-anchor","middle");
+      t.setAttribute("dominant-baseline","middle");
+      t.setAttribute("font-size","4");
+      t.setAttribute("fill","#111");
+      t.textContent = items[i].length>9? items[i].slice(0,9)+"…" : items[i];
+      elWheel.appendChild(t);
+    }
+  };
+
+  // 칩 미리보기
+  const drawChips = () => {
+    elChips.innerHTML = "";
+    items.forEach((s)=> {
+      const c = document.createElement("div");
+      c.className = "chip";
+      c.textContent = s;
+      elChips.appendChild(c);
+    });
+  };
+
+  // 초기화
+  const init = () => {
+    items = [...DEFAULT_ITEMS];
+    elItems.value = items.join("\n");
+    drawWheel();
+    drawChips();
+    elResult.textContent = "결과가 여기에 표시됩니다";
+    elWheel.style.transition = "none";
+    elWheel.style.transform = "rotate(0deg)";
+    requestAnimationFrame(()=>{ elWheel.style.transition = "transform 5s cubic-bezier(.12,.2,0,1)"; });
+  };
+  init();
+
+  // 돌리기
+  document.getElementById('spin').addEventListener('click', () => {
+    if (!items.length){ alert("항목을 1개 이상 입력하세요."); return; }
+    const n = items.length;
+    const slice = 360 / n;
+    // 임의 회전량 (5~8바퀴 + 랜덤 오프셋)
+    const spins = 5 + Math.random()*3;
+    const offset = Math.random()*360;
+    const deg = spins*360 + offset;
+    elWheel.style.transform = `rotate(${deg}deg)`;
+
+    // 결과 계산
+    const normalized = (deg % 360 + 360) % 360;         // 0~359
+    const fromTop = (normalized + 90) % 360;            // 핀이 위쪽(90도 보정)
+    const index = Math.floor((n - (fromTop / slice)) % n);
+    const pick = items[(index+n)%n];
+
+    // 애니메이션 끝나고 표시
+    setTimeout(()=>{ elResult.textContent = `결과: ${pick}`; }, 5000);
+  });
+
+  // 적용하기
+  document.getElementById('apply').addEventListener('click', () => {
+    const list = cleanList(elItems.value);
+    if (!list.length){ alert("항목을 1개 이상 입력하세요."); return; }
+    items = list;
+    drawWheel(); drawChips();
+    elResult.textContent = "항목을 적용했습니다. 돌려보세요!";
+  });
+
+  // 기본값 리셋
+  document.getElementById('reset').addEventListener('click', init);
+
+  // 샘플 추가
+  document.getElementById('addSample').addEventListener('click', () => {
+    const extra = ["버려진 병뚜껑", "빨대", "종이컵", "상자", "바퀴", "다리"];
+    elItems.value = (elItems.value.trim() ? elItems.value+"\n" : "") + extra.join("\n");
+  });
+
+  // 전체 지우기
+  document.getElementById('clear').addEventListener('click', () => { elItems.value=""; items=[]; drawWheel(); drawChips(); elResult.textContent="항목이 비었습니다."; });
+
+  // 색상 셔플
+  document.getElementById('shuffle').addEventListener('click', () => { drawWheel(); });
+</script>
+</body>
+</html>
