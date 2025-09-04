@@ -12,7 +12,6 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:980px;margin:0 auto;padding:28px 16px}
-  /* 타이틀은 블랙 */
   h1{margin:8px 0 22px;font-size:32px;text-align:center;color:#000}
 
   .grid{display:grid;gap:20px}
@@ -21,13 +20,13 @@
   .card{background:var(--card);border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,.08);overflow:hidden}
   .pad{padding:20px}
 
-  /* ===== 휠 크기: 너무 커지지 않도록 상한 ===== */
+  /* 휠 크기 상한(반응형) */
   .wheel-box{width:min(92vw,520px);margin:0 auto;}
   .wheel-wrap{position:relative;width:100%;aspect-ratio:1/1;}
   svg{width:100%;height:100%;display:block}
   #slices,#labels{transform-box:fill-box;transform-origin:50% 50%}
 
-  /* 상단 핀(삼각형) */
+  /* 상단 핀 */
   .pin{position:absolute;left:50%;transform:translateX(-50%);top:-4px;width:0;height:0;
        border-left:14px solid transparent;border-right:14px solid transparent;
        border-top:24px solid var(--accent);filter:drop-shadow(0 2px 2px rgba(0,0,0,.25))}
@@ -38,7 +37,7 @@
   .ghost{background:#eef4ff;color:var(--accent)}
   .danger{background:#ef4444;color:#fff}
 
-  .result{font-weight:800;font-size:22px;margin:16px 0 0;text-align:center} /* 구분선 제거 */
+  .result{font-weight:800;font-size:22px;margin:16px 0 0;text-align:center}
 
   .inputs-title{margin:0 0 6px;font-size:18px}
   .inputs{display:flex;flex-direction:column;gap:8px;margin-top:10px}
@@ -51,7 +50,7 @@
   <h1>어떤 재료를 사용해 볼까요?</h1>
 
   <div class="grid">
-    <!-- ===== 왼쪽: 돌림판 ===== -->
+    <!-- 왼쪽: 돌림판 -->
     <div class="card pad">
       <div class="wheel-box">
         <div class="wheel-wrap">
@@ -71,9 +70,9 @@
       <div id="result" class="result">선택된 재료가 여기에 표시됩니다</div>
     </div>
 
-    <!-- ===== 오른쪽: 입력창 ===== -->
+    <!-- 오른쪽: 입력창 -->
     <div class="card pad">
-      <h2 class="inputs-title">재료 항목 입력</h2>
+      <h2 class="inputs-title">수집한 재료를 입력해 주세요.</h2>
       <div class="inputs" id="inputs"></div>
       <div class="row">
         <button id="add" class="ghost">항목 추가</button>
@@ -95,13 +94,34 @@
   const resultEl  = document.getElementById('result');
 
   let items = ["병뚜껑","종이","빨대"];
-  let isSpinning = false;                      // 중복 스핀 방지
+  let isSpinning = false;
   const TRANSITION = 'transform 5s cubic-bezier(.12,.2,0,1)';
 
-  /* ===== 휠 그리기 (라벨은 휠과 함께 ‘그대로’ 회전) ===== */
+  /* 부채꼴(반지름 R, 각 θ) 중심까지의 거리 r (기하학적 centroid)
+     r = 2R*sin(θ/2) / (3*(θ/2))  */
+  const sectorCentroidR = (R, thetaRad) => {
+    const half = thetaRad/2;
+    if (half === 0) return R*0.6;
+    const r = (2*R*Math.sin(half)) / (3*half);
+    return Math.min(R*0.8, Math.max(R*0.35, r)); // 너무 가장자리/중앙 치우침 방지
+  };
+
+  /* 글자 길이에 따라 자동 폰트 크기(대략적인 폭 기준) */
+  function fitFontSize(text, r, thetaRad){
+    const maxSize = 6.4, minSize = 3.8;
+    const targetWidth = r * thetaRad * 0.82;   // 해당 원호 길이의 82% 정도만 사용
+    let size = maxSize;
+    const len = Math.max(1, [...text].length); // 한글도 안전히 길이 계산
+    const charRatio = 0.62;                    // 글자폭≈size*0.62 (대략값)
+    while (size > minSize && len * size * charRatio > targetWidth) size -= 0.2;
+    return size.toFixed(2);
+  }
+
+  /* ===== 휠 그리기 (라벨은 휠과 함께 회전, 각 조각의 중심에 배치) ===== */
   function drawWheel(){
     const n = Math.max(1, items.length);
     const slice = 360/n;
+    const theta = deg2rad(slice);              // 라디안
     gSlices.innerHTML = ''; gLabels.innerHTML = '';
 
     for (let i=0;i<n;i++){
@@ -112,28 +132,33 @@
       const x1 = 48*Math.cos(deg2rad(start)), y1 = 48*Math.sin(deg2rad(start));
       const x2 = 48*Math.cos(deg2rad(end)),   y2 = 48*Math.sin(deg2rad(end));
 
-      // 부채꼴 조각
+      // 조각
       const p = document.createElementNS('http://www.w3.org/2000/svg','path');
       p.setAttribute('d', `M0 0 L ${x1} ${y1} A 48 48 0 ${large} 1 ${x2} ${y2} Z`);
       p.setAttribute('fill', PASTELS[i % PASTELS.length]);
       gSlices.appendChild(p);
 
-      // 라벨 (보편적 방식: 슬라이스에 붙어서 같이 회전 / 뒤집기 안 함)
+      // 라벨 좌표 = 부채꼴 중심(centroid), 항상 각 조각의 딱 가운데
       const mid = start + slice/2;
-      const r = 28; // 라벨 반지름
+      const r = sectorCentroidR(48, theta);
+      const rx = r * Math.cos(deg2rad(mid));
+      const ry = r * Math.sin(deg2rad(mid));
+
+      const label = (items[i] ?? '').toString().trim() || '항목';
+      const fs = fitFontSize(label, r, theta);
+
       const t = document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x', rx);
+      t.setAttribute('y', ry);
       t.setAttribute('text-anchor','middle');
       t.setAttribute('dominant-baseline','middle');
-      t.setAttribute('font-size','5.5');
+      t.setAttribute('font-size', fs);
       t.setAttribute('font-weight','800');
       t.setAttribute('fill','#111');
-      // 중앙(0,0)에서 mid만큼 회전 → 반지름 r만큼 이동 → (접선 읽기감을 위해) 추가로 90도 회전
-      t.setAttribute('transform', `rotate(${mid}) translate(0, -${r}) rotate(90)`);
-      t.textContent = (items[i] ?? '').toString().trim() || '항목';
+      t.textContent = label;
       gLabels.appendChild(t);
     }
 
-    // 항상 같은 트랜지션이 적용되도록 세팅
     gSlices.style.transition = TRANSITION;
     gLabels.style.transition = TRANSITION;
   }
@@ -144,7 +169,7 @@
     row.className = 'input-row';
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = '수집한 재료를 입력해 주세요. (예: 휴지심)';
+    input.placeholder = '예 : 휴지심';          /* 요청한 placeholder */
     input.value = value;
     const del = document.createElement('button');
     del.textContent = '삭제';
@@ -175,7 +200,7 @@
     items=["병뚜껑","종이","빨대"]; renderInputs(); drawWheel(); resultEl.textContent='선택된 재료가 여기에 표시됩니다';
   });
 
-  /* ===== 스핀: 매번 ‘처음처럼’ 큰 회전 + 끝날 때까지 재클릭 방지 ===== */
+  /* ===== 스핀: 항상 처음처럼 큰 회전, 회전 중 재클릭 방지, 회전 후 즉시 재시도 가능 ===== */
   function spinOnce(){
     if(isSpinning) return;
     if(!items.length){ alert('항목을 1개 이상 입력해 주세요.'); return; }
@@ -183,15 +208,15 @@
 
     const n = items.length, slice = 360/n;
     const pickIndex = Math.floor(Math.random()*n);
-    const mid = pickIndex*slice + slice/2;      // 선택 섹터 중앙각(12시 기준 0°가 위)
-    const alignToTop = 360 - mid;               // 중앙을 12시에 맞추는 보정
-    const spins = 6*360;                        // 충분한 회전수
+    const mid = pickIndex*slice + slice/2;      // 선택 섹터 중앙각(12시 기준)
+    const alignToTop = 360 - mid;
+    const spins = 6*360;
     const target = spins + alignToTop;
 
-    // 항상 동일 조건에서 시작하도록 0deg로 리셋 → 리플로우 → 최종 회전
+    // 0deg로 리셋 → 리플로우 → 목표 각도로 회전 (항상 동일 조건)
     gSlices.style.transition='none'; gLabels.style.transition='none';
     gSlices.style.transform='rotate(0deg)'; gLabels.style.transform='rotate(0deg)';
-    void gSlices.offsetWidth;                   // 리플로우(강제 계산)
+    void gSlices.offsetWidth;
 
     gSlices.style.transition=TRANSITION; gLabels.style.transition=TRANSITION;
     gSlices.style.transform=`rotate(${target}deg)`;
@@ -199,14 +224,14 @@
 
     const onEnd = () => {
       gSlices.removeEventListener('transitionend', onEnd);
-      isSpinning = false;
+      isSpinning = false;                                  // 다시 돌리기 가능
       resultEl.textContent = `선택된 재료: ${items[pickIndex]}`;
     };
     gSlices.addEventListener('transitionend', onEnd);
   }
   document.getElementById('spin').addEventListener('click', spinOnce);
 
-  /* ===== 초기 렌더 ===== */
+  /* 초기 렌더 */
   (function init(){ renderInputs(); drawWheel(); })();
 </script>
 </body>
