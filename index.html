@@ -18,7 +18,6 @@
   .wheel-wrap{position:relative;aspect-ratio:1/1;width:100%}
   .pin{position:absolute;left:50%;transform:translateX(-50%);top:-4px;width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:24px solid #f59e0b;filter:drop-shadow(0 2px 2px rgba(0,0,0,.25))}
   svg{width:100%;height:auto;display:block}
-  /* SVG 그룹 회전 기준을 중앙으로 */
   #slices, #labels { transform-box: fill-box; transform-origin: 50% 50%; }
 
   .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;justify-content:center}
@@ -46,9 +45,8 @@
         <div class="pin"></div>
         <svg viewBox="-50 -50 100 100" aria-label="랜덤 돌림판">
           <g id="slices" style="transition:transform 5s cubic-bezier(.12,.2,0,1)"></g>
-          <g id="labels"></g>
-          <circle cx="0" cy="0" r="48" fill="none" stroke="#2e2e2e" stroke-width="1.5"></circle>
-          <circle cx="0" cy="0" r="6" fill="#111"></circle>
+          <g id="labels" style="transition:transform 5s cubic-bezier(.12,.2,0,1)"></g>
+          <!-- 외곽선/중심 원 제거됨 -->
         </svg>
       </div>
 
@@ -74,15 +72,16 @@
 </div>
 
 <script>
-  // 초기 항목: 입력칸에 미리 채워짐
+  // 초기 항목(입력칸에 미리 채움)
   const INITIAL_ITEMS = ["병뚜껑","종이","빨대"];
   let items = [...INITIAL_ITEMS];
-  // 파스텔 톤온톤 팔레트 (저채도/고명도 HSL)
-  function pastelColors(n, seed=0){
+
+  // 파스텔 톤온톤
+  function pastelColors(n, seed=210){
     return Array.from({length:n}, (_,i)=>{
       const h = (seed + i*(360/Math.max(n,1)))%360;
-      const s = 52;              // 채도 낮게
-      const l = 78 - (i%3)*4;    // 톤온톤(명도 살짝만 다르게)
+      const s = 52;                // 낮은 채도
+      const l = 78 - (i%3)*4;      // 톤온톤(명도 약변화)
       return `hsl(${h} ${s}% ${l}%)`;
     });
   }
@@ -94,28 +93,28 @@
   const inputsBox = document.getElementById('inputs');
   const resultEl  = document.getElementById('result');
 
-  // 부채꼴 휠 그리기 (정확히 n등분)
+  // 휠 그리기: n등분 + 라벨을 ‘중심을 향하게’ (중앙각만큼 회전)
   function drawWheel(){
     const n = items.length || 1;
-    const colors = pastelColors(n, 210); // 살짝 푸른계열 톤온톤 기준
+    const colors = pastelColors(n);
     gSlices.innerHTML = '';
     gLabels.innerHTML = '';
     const slice = 360/n;
 
     for(let i=0;i<n;i++){
-      const start = i*slice-90, end=(i+1)*slice-90;   // 12시를 0도로 보정
+      const start = i*slice-90, end=(i+1)*slice-90;   // 12시 기준
       const x1 = 48*Math.cos(deg2rad(start)), y1 = 48*Math.sin(deg2rad(start));
       const x2 = 48*Math.cos(deg2rad(end)),   y2 = 48*Math.sin(deg2rad(end));
       const large = slice>180?1:0;
 
-      // 색상 조각
+      // 부채꼴
       const p = document.createElementNS('http://www.w3.org/2000/svg','path');
       p.setAttribute('d', `M0 0 L ${x1} ${y1} A 48 48 0 ${large} 1 ${x2} ${y2} Z`);
       p.setAttribute('fill', colors[i]);
       gSlices.appendChild(p);
 
-      // 라벨 (기본은 휠 기준 배치, 멈춘 뒤 수평 보정을 위해 별도 그룹 사용)
-      const mid = start + slice/2;
+      // 라벨: 중심을 향하도록 회전(중앙각 만큼)
+      const mid = start + slice/2;                 // 12시 기준 중앙각
       const rx = 30*Math.cos(deg2rad(mid)), ry = 30*Math.sin(deg2rad(mid));
       const t = document.createElementNS('http://www.w3.org/2000/svg','text');
       t.setAttribute('x', rx); t.setAttribute('y', ry);
@@ -123,6 +122,8 @@
       t.setAttribute('dominant-baseline','middle');
       t.setAttribute('font-size','4');
       t.setAttribute('fill','#111');
+      // 회전 중심을 텍스트 좌표로 지정 → 텍스트 자체를 중앙각만큼 회전
+      t.setAttribute('transform', `rotate(${mid} ${rx} ${ry})`);
       const label = (items[i] ?? '').toString().trim() || '항목';
       t.textContent = label.length>9 ? label.slice(0,9)+'…' : label;
       gLabels.appendChild(t);
@@ -144,7 +145,13 @@
 
     // 실시간 반영
     input.addEventListener('input', syncFromInputs);
-    input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ addRow(); } });
+    // Enter → 다음 칸 추가(문자 이동 방지)
+    input.addEventListener('keydown', e=>{
+      if(e.key==='Enter'){
+        e.preventDefault();       // 마지막 글자가 다음 칸으로 들어가는 현상 방지
+        addRow();
+      }
+    });
     del.addEventListener('click', ()=>{ row.remove(); syncFromInputs(); });
 
     return row;
@@ -175,33 +182,24 @@
     items=[...INITIAL_ITEMS]; renderInputs(); drawWheel(); resultEl.textContent='선택된 재료가 여기에 표시됩니다';
   });
 
-  // 회전 & 결과 (라벨 수평 고정 처리)
+  // 회전 & 결과 (텍스트는 항상 조각과 함께 회전)
   let currentDeg = 0;
   document.getElementById('spin').addEventListener('click', ()=>{
     if(!items.length){ alert('항목을 1개 이상 입력해 주세요.'); return; }
     const n = items.length, slice = 360/n;
-    const spins = 5 + Math.random()*3;
-    const offset = Math.random()*360;
-    currentDeg = spins*360 + offset;
 
-    // 조각과 라벨을 함께 회전
-    gSlices.style.transition = "transform 5s cubic-bezier(.12,.2,0,1)";
-    gLabels.style.transition = "transform 5s cubic-bezier(.12,.2,0,1)";
+    // 임의의 인덱스를 뽑아 그 중앙각이 정확히 0°(12시)로 오도록 회전값 조정
+    const pickIndex = Math.floor(Math.random()*n);
+    const targetAngle = pickIndex * slice;      // 각 조각 시작각(12시 기준, 시계방향)
+    const alignToTop = 360 - (targetAngle + slice/2); // 중앙각을 0°로 맞추기 위한 보정
+    const spins = 6*360;                         // 충분한 회전
+    currentDeg = spins + alignToTop;
+
     gSlices.style.transform = `rotate(${currentDeg}deg)`;
     gLabels.style.transform = `rotate(${currentDeg}deg)`;
 
-    // 결과 계산
-    const normalized = (currentDeg % 360 + 360) % 360;
-    const fromTop = normalized % 360;           // 핀은 12시 방향
-    const index = Math.floor(((360 - fromTop) % 360) / slice) % n;
-    const pick = items[index];
-
-    // 회전 종료 후: 라벨만 즉시 역회전시켜 "수평 상태" 유지
-    setTimeout(()=>{
-      gLabels.style.transition = "none";
-      gLabels.style.transform = "rotate(0deg)";
-      resultEl.textContent = `선택된 재료: ${pick}`;
-    }, 5000);
+    const pick = items[pickIndex];
+    setTimeout(()=>{ resultEl.textContent = `선택된 재료: ${pick}`; }, 5000);
   });
 
   // 초기화
