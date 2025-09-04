@@ -5,7 +5,10 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>어떤 재료를 사용해 볼까요?</title>
 <style>
-  :root{ --accent:#3B82F6; --bg:#f6f7f9; --card:#fff; --ink:#111; --line:#e5e7eb; }
+  :root{
+    --accent:#3B82F6;                 /* 핀/버튼 포인트 컬러 */
+    --bg:#f6f7f9; --card:#fff; --ink:#111; --line:#e5e7eb;
+  }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:980px;margin:0 auto;padding:28px 16px}
@@ -17,11 +20,13 @@
   .card{background:var(--card);border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,.08);overflow:hidden}
   .pad{padding:20px}
 
+  /* 휠 (반응형 상한) */
   .wheel-box{width:min(92vw,520px);margin:0 auto;}
   .wheel-wrap{position:relative;width:100%;aspect-ratio:1/1;}
   svg{width:100%;height:100%;display:block}
   #slices,#labels{transform-box:fill-box;transform-origin:50% 50%}
 
+  /* 상단 핀 */
   .pin{position:absolute;left:50%;transform:translateX(-50%);top:-4px;width:0;height:0;
        border-left:14px solid transparent;border-right:14px solid transparent;
        border-top:24px solid var(--accent);filter:drop-shadow(0 2px 2px rgba(0,0,0,.25))}
@@ -38,6 +43,9 @@
   .inputs{display:flex;flex-direction:column;gap:8px;margin-top:10px}
   .input-row{display:flex;gap:8px}
   .input-row input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit}
+
+  /* 회전 트랜지션: 네 코드와 동일한 감속곡선/시간 */
+  .spin-transition{transition:transform 4s cubic-bezier(0.2,0.8,0.2,1)}
 </style>
 </head>
 <body>
@@ -45,13 +53,14 @@
   <h1>어떤 재료를 사용해 볼까요?</h1>
 
   <div class="grid">
+    <!-- 왼쪽: 돌림판 -->
     <div class="card pad">
       <div class="wheel-box">
         <div class="wheel-wrap">
           <div class="pin"></div>
           <svg viewBox="-50 -50 100 100" aria-label="랜덤 돌림판">
-            <g id="slices"></g>
-            <g id="labels"></g>
+            <g id="slices" class="spin-transition"></g>
+            <g id="labels" class="spin-transition"></g>
           </svg>
         </div>
       </div>
@@ -63,6 +72,7 @@
       <div id="result" class="result">선택된 재료가 여기에 표시됩니다</div>
     </div>
 
+    <!-- 오른쪽: 입력창 -->
     <div class="card pad">
       <h2 class="inputs-title">수집한 재료를 입력해 주세요.</h2>
       <div class="inputs" id="inputs"></div>
@@ -75,38 +85,47 @@
 </div>
 
 <script>
-  const PASTELS = ['#D9ECFF','#FFE4EA','#FFF6C9','#DDF8EA','#E9D8FD','#FFE8CC'];
+  /* ===== 상수/유틸 ===== */
+  const PASTELS = ['#D9ECFF','#FFE4EA','#FFF6C9','#DDF8EA','#E9D8FD','#FFE8CC']; // 하늘·핑크·바나나·민트·라벤더·피치
   const deg2rad = d => d * Math.PI / 180;
 
+  /* ===== 전역 상태/DOM ===== */
   const gSlices = document.getElementById('slices');
   const gLabels = document.getElementById('labels');
   const inputsBox = document.getElementById('inputs');
   const resultEl  = document.getElementById('result');
+  const btnSpin   = document.getElementById('spin');
+  const btnReset  = document.getElementById('reset');
+  const btnAdd    = document.getElementById('add');
+  const btnClear  = document.getElementById('clear');
 
   let items = ["병뚜껑","종이","빨대"];
   let isSpinning = false;
-  const TRANSITION = 'transform 5s cubic-bezier(.12,.2,0,1)';   // 항상 동일한 세기/시간
-  const FULL_SPINS = 6*360;                                     // 항상 6바퀴
+
+  /* 캔버스 코드의 ‘누적 회전’ 방식 */
+  const SPIN_TURNS_DEG = 360 * 10; // 10바퀴
+  let currentDeg = 0;              // 누적 회전 각도 (연속 회전 느낌)
 
   /* 부채꼴 centroid 반지름 r */
   const sectorCentroidR = (R, thetaRad) => {
     const half = thetaRad/2;
     if (half === 0) return R*0.6;
     const r = (2*R*Math.sin(half)) / (3*half);
-    return Math.min(R*0.8, Math.max(R*0.35, r));
+    return Math.min(R*0.8, Math.max(R*0.35, r)); // 너무 가장자리/중앙 치우침 방지
   };
 
-  /* 길면 자동 축소 (라벨 덜 굵고 덜 큼) */
+  /* 길면 자동 축소 (라벨 덜 굵고 과하지 않게) */
   function fitFontSize(text, r, thetaRad){
-    const maxSize = 5.2, minSize = 3.0;               // 이전보다 작게
+    const maxSize = 5.0, minSize = 3.0;               // 덜 크고 덜 두껍게
     const targetWidth = r * thetaRad * 0.82;
     let size = maxSize;
     const len = Math.max(1, [...text].length);
-    const charRatio = 0.6;
+    const charRatio = 0.60;
     while (size > minSize && len * size * charRatio > targetWidth) size -= 0.2;
     return size.toFixed(2);
   }
 
+  /* ===== 휠 그리기 (라벨은 ‘중심→바깥’ 방향으로 배치, 휠과 함께 회전) ===== */
   function drawWheel(){
     const n = Math.max(1, items.length);
     const slice = 360/n;
@@ -127,7 +146,7 @@
       p.setAttribute('fill', PASTELS[i % PASTELS.length]);
       gSlices.appendChild(p);
 
-      // 라벨: 반지름 방향(중심에서 바깥쪽)으로 회전/배치
+      // 라벨: 반지름 방향 (중심에서 바깥쪽) — 캔버스 코드 방향성을 SVG로 이식
       const mid = start + slice/2;
       const thetaRad = deg2rad(slice);
       const r = sectorCentroidR(48, thetaRad);
@@ -139,21 +158,20 @@
       t.setAttribute('text-anchor','middle');
       t.setAttribute('dominant-baseline','middle');
       t.setAttribute('font-size', fs);
-      t.setAttribute('font-weight','600');            // 더 얇게
+      t.setAttribute('font-weight','600');
       t.setAttribute('fill','#111');
-
-      /* 중심 기준으로 mid만큼 회전 → 반지름 방향으로 r만큼 이동
-         (추가 회전 없이 글자 baseline이 '반지름 방향'이 되도록) */
+      // 중심에서 mid만큼 회전 → 반지름 r만큼 이동 (추가 회전 없이 글자가 바깥쪽을 향함)
       t.setAttribute('transform', `rotate(${mid}) translate(0, -${r})`);
       t.textContent = label;
       gLabels.appendChild(t);
     }
 
-    gSlices.style.transition = TRANSITION;
-    gLabels.style.transition = TRANSITION;
+    // 현재 누적 회전 각도로 시각 상태 유지 (입력 변경 시 깜빡임 방지)
+    gSlices.style.transform = `rotate(${currentDeg}deg)`;
+    gLabels.style.transform = `rotate(${currentDeg}deg)`;
   }
 
-  /* 입력 UI */
+  /* ===== 입력창 ===== */
   function rowTemplate(value=''){
     const row = document.createElement('div');
     row.className = 'input-row';
@@ -178,43 +196,48 @@
   function syncFromInputs(){ items = collectItems(); drawWheel(); resultEl.textContent='선택된 재료가 여기에 표시됩니다'; }
 
   function addRow(value=''){ inputsBox.appendChild(rowTemplate(value)); inputsBox.lastChild.querySelector('input').focus(); }
-  document.getElementById('add').addEventListener('click', ()=> addRow());
-  document.getElementById('clear').addEventListener('click', ()=>{
+  btnAdd.addEventListener('click', ()=> addRow());
+  btnClear.addEventListener('click', ()=>{
     inputsBox.innerHTML=''; items=[]; drawWheel(); resultEl.textContent='선택된 재료가 여기에 표시됩니다';
   });
-  document.getElementById('reset').addEventListener('click', ()=>{
-    items=["병뚜껑","종이","빨대"]; renderInputs(); drawWheel(); resultEl.textContent='선택된 재료가 여기에 표시됩니다';
+  btnReset.addEventListener('click', ()=>{
+    items=["병뚜껑","종이","빨대"]; renderInputs();
+    currentDeg = 0;
+    gSlices.style.transform = `rotate(0deg)`; gLabels.style.transform = `rotate(0deg)`;
+    drawWheel(); resultEl.textContent='선택된 재료가 여기에 표시됩니다';
   });
 
-  /* 스핀: 항상 같은 강도로 6바퀴 + 정렬, 회전 중 재클릭 방지 */
+  /* ===== 스핀: 캔버스 코드의 누적 회전 로직을 SVG에 적용 =====
+     - 매번 10바퀴 + 선택 섹터 정렬
+     - currentDeg 누적 → 다시 돌려도 동일한 강도로 ‘길게’ 회전  */
   function spinOnce(){
     if(isSpinning) return;
     if(!items.length){ alert('항목을 1개 이상 입력해 주세요.'); return; }
-    isSpinning = true;
+    isSpinning = true; btnSpin.disabled = true;
 
     const n = items.length, slice = 360/n;
     const pickIndex = Math.floor(Math.random()*n);
-    const mid = pickIndex*slice + slice/2;
-    const alignToTop = 360 - mid;
-    const target = FULL_SPINS + alignToTop;
+    const mid = pickIndex*slice + slice/2;    // 선택 섹터 중앙각(12시 기준 0=위)
+    const alignToTop = 360 - mid;             // 이 각도로 끝나면 핀이 중앙을 가리킴
 
-    // 0으로 리셋 → 리플로우 → 동일 강도 회전
-    gSlices.style.transition='none'; gLabels.style.transition='none';
-    gSlices.style.transform='rotate(0deg)'; gLabels.style.transform='rotate(0deg)';
-    void gSlices.offsetWidth;
+    // 현재 각도 기준 보정(모듈러 360) + 10바퀴 누적
+    const need = (alignToTop - (currentDeg % 360) + 360) % 360;
+    const delta = SPIN_TURNS_DEG + need;
+    currentDeg += delta;
 
-    gSlices.style.transition=TRANSITION; gLabels.style.transition=TRANSITION;
-    gSlices.style.transform=`rotate(${target}deg)`; gLabels.style.transform=`rotate(${target}deg)`;
+    gSlices.style.transform = `rotate(${currentDeg}deg)`;
+    gLabels.style.transform = `rotate(${currentDeg}deg)`;
 
     const onEnd = () => {
       gSlices.removeEventListener('transitionend', onEnd);
-      isSpinning = false;
+      isSpinning = false; btnSpin.disabled = false;
       resultEl.textContent = `선택된 재료: ${items[pickIndex]}`;
     };
-    gSlices.addEventListener('transitionend', onEnd);
+    gSlices.addEventListener('transitionend', onEnd, {once:true});
   }
-  document.getElementById('spin').addEventListener('click', spinOnce);
+  btnSpin.addEventListener('click', spinOnce);
 
+  /* ===== 초기 렌더 ===== */
   (function init(){ renderInputs(); drawWheel(); })();
 </script>
 </body>
