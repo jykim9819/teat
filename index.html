@@ -1,8 +1,23 @@
+<!-- SVG 구조 예시 -->
+<svg viewBox="-50 -50 100 100" aria-label="랜덤 돌림판">
+  <g id="slices" style="transition:transform 5s cubic-bezier(.12,.2,0,1)"></g>
+  <g id="labels" style="transition:transform 5s cubic-bezier(.12,.2,0,1)"></g>
+</svg>
+
 <script>
-// …중략…
+// 필수: 전역 참조들
+const PASTELS = ['#D9ECFF','#FFE4EA','#FFF6C9','#DDF8EA','#E9D8FD','#FFE8CC'];
+const deg2rad = d => d * Math.PI / 180;
+
+const gSlices = document.getElementById('slices');
+const gLabels = document.getElementById('labels');
+
+// 항목 배열 (비어있어도 최소 1로 처리됨)
+let items = Array.isArray(window.items) ? window.items : ["병뚜껑","종이","빨대"];
 
 function drawWheel(){
-  const n = items.length || 1;
+  const nRaw = items.length;
+  const n = nRaw > 0 ? nRaw : 1;         // 0 방지
   gSlices.innerHTML = '';
   gLabels.innerHTML = '';
   const slice = 360 / n;
@@ -14,22 +29,17 @@ function drawWheel(){
     const x2 = 48*Math.cos(deg2rad(end)),   y2 = 48*Math.sin(deg2rad(end));
     const large = slice > 180 ? 1 : 0;
 
-    // 부채꼴 조각
+    // 조각
     const p = document.createElementNS('http://www.w3.org/2000/svg','path');
     p.setAttribute('d', `M0 0 L ${x1} ${y1} A 48 48 0 ${large} 1 ${x2} ${y2} Z`);
     p.setAttribute('fill', PASTELS[i % PASTELS.length]);
     gSlices.appendChild(p);
 
-    // ===== 라벨(스샷처럼 보이게) =====
-    // 1) 중앙각
-    const mid = start + slice/2;            // 12시 기준
-    // 2) 라벨 위치(반지름 약간 안쪽)
+    // 라벨: 중앙각 기준 배치 + 아래쪽이면 180° 뒤집기
+    const mid = start + slice/2;
     const rLabel = 28;
     const rx = rLabel*Math.cos(deg2rad(mid));
     const ry = rLabel*Math.sin(deg2rad(mid));
-
-    // 3) 글자 각도: 접선 방향(= 중앙각과 같은 회전) + '항상 정방향' 보정
-    //    화면 각도 0°가 12시이므로, 90~270°(아래쪽)인 경우 180°를 더해 뒤집습니다.
     let angle = mid;
     const norm = (angle % 360 + 360) % 360;
     if (norm > 90 && norm < 270) angle += 180;
@@ -39,7 +49,7 @@ function drawWheel(){
     t.setAttribute('y', ry);
     t.setAttribute('text-anchor','middle');
     t.setAttribute('dominant-baseline','middle');
-    t.setAttribute('font-size','6');        // 보기 좋게 조금 크게
+    t.setAttribute('font-size','6');
     t.setAttribute('font-weight','700');
     t.setAttribute('fill', '#111');
     t.setAttribute('transform', `rotate(${angle} ${rx} ${ry})`);
@@ -49,5 +59,11 @@ function drawWheel(){
     gLabels.appendChild(t);
   }
 }
-// …중략…
+
+// DOM이 준비된 뒤 실행 (스크립트를 맨 아래에 두면 생략 가능)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', drawWheel);
+} else {
+  drawWheel();
+}
 </script>
