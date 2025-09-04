@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>어떤 재료를 사용할까요?</title>
+<title>어떤 재료를 사용해 볼까요?</title>
 <style>
   :root{--bg:#f6f7f9;--card:#fff;--ink:#111;--muted:#6b7280;--accent:#4f46e5;--line:#e5e7eb}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
   .wrap{max-width:960px;margin:0 auto;padding:28px 16px}
-  h1{margin:8px 0 20px;font-size:28px;text-align:center}
+  h1{margin:8px 0 22px;font-size:30px;text-align:center}
   .grid{display:grid;gap:20px}
   @media(min-width:900px){.grid{grid-template-columns:520px 1fr}}
   .card{background:var(--card);border-radius:18px;box-shadow:0 8px 24px rgba(0,0,0,.08)}
@@ -18,28 +18,27 @@
   .wheel-wrap{position:relative;aspect-ratio:1/1;width:100%}
   .pin{position:absolute;left:50%;transform:translateX(-50%);top:-4px;width:0;height:0;border-left:14px solid transparent;border-right:14px solid transparent;border-top:24px solid #f59e0b;filter:drop-shadow(0 2px 2px rgba(0,0,0,.25))}
   svg{width:100%;height:auto;display:block}
+  /* SVG 그룹 회전 기준을 중앙으로 */
+  #slices, #labels { transform-box: fill-box; transform-origin: 50% 50%; }
 
   .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;justify-content:center}
-  button{border:0;border-radius:12px;padding:10px 14px;font:inherit;cursor:pointer}
+  button{border:0;border-radius:12px;padding:12px 18px;font:inherit;cursor:pointer}
   .primary{background:var(--accent);color:#fff}
   .ghost{background:#eef2ff;color:#3730a3}
   .danger{background:#ef4444;color:#fff}
 
-  .result{font-weight:800;font-size:24px;margin:14px 0 16px;text-align:center}
-  .muted{color:var(--muted);font-size:13px}
-  .soft-divider{height:1px;background:var(--line);margin:8px 0 14px}
+  .result{font-weight:800;font-size:24px;margin:16px 0 12px;text-align:center}
+  .soft-divider{height:1px;background:var(--line);margin:10px 0 16px}
 
   .inputs-title{margin:0 0 6px;font-size:18px}
   .inputs{display:flex;flex-direction:column;gap:8px;margin-top:10px}
   .input-row{display:flex;gap:8px}
   .input-row input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font:inherit}
-  .chipbox{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-  .chip{background:#eef2ff;color:#3730a3;border-radius:999px;padding:6px 10px;font-size:12px}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>어떤 재료를 사용할까요?</h1>
+  <h1>어떤 재료를 사용해 볼까요?</h1>
   <div class="grid">
     <!-- Wheel -->
     <div class="card pad">
@@ -47,6 +46,7 @@
         <div class="pin"></div>
         <svg viewBox="-50 -50 100 100" aria-label="랜덤 돌림판">
           <g id="slices" style="transition:transform 5s cubic-bezier(.12,.2,0,1)"></g>
+          <g id="labels"></g>
           <circle cx="0" cy="0" r="48" fill="none" stroke="#2e2e2e" stroke-width="1.5"></circle>
           <circle cx="0" cy="0" r="6" fill="#111"></circle>
         </svg>
@@ -54,15 +54,11 @@
 
       <div class="row">
         <button id="spin" class="primary">돌리기</button>
-        <button id="shuffle" class="ghost">색상 섞기</button>
         <button id="reset" class="ghost">처음 상태로</button>
       </div>
 
       <div id="result" class="result">선택된 재료가 여기에 표시됩니다</div>
-      <!-- 요청: 선택된 재료와 입력영역 사이 구분선 -->
       <div class="soft-divider"></div>
-
-      <p class="muted" style="text-align:center;margin-top:6px">입력칸을 수정하면 휠이 실시간으로 업데이트됩니다.</p>
     </div>
 
     <!-- Inputs -->
@@ -73,32 +69,37 @@
         <button id="add" class="ghost">항목 추가</button>
         <button id="clear" class="danger">모두 삭제</button>
       </div>
-      <div class="chipbox" id="chips"></div>
     </div>
   </div>
 </div>
 
 <script>
-  // ===== 초기 항목: 입력창에 미리 들어가 있게 설정 (텍스트로 '기본항목:'은 표시하지 않음) =====
+  // 초기 항목: 입력칸에 미리 채워짐
   const INITIAL_ITEMS = ["병뚜껑","종이","빨대"];
   let items = [...INITIAL_ITEMS];
-  let hueSeed = Math.floor(Math.random()*360);
+  // 파스텔 톤온톤 팔레트 (저채도/고명도 HSL)
+  function pastelColors(n, seed=0){
+    return Array.from({length:n}, (_,i)=>{
+      const h = (seed + i*(360/Math.max(n,1)))%360;
+      const s = 52;              // 채도 낮게
+      const l = 78 - (i%3)*4;    // 톤온톤(명도 살짝만 다르게)
+      return `hsl(${h} ${s}% ${l}%)`;
+    });
+  }
+  const deg2rad = d => d*Math.PI/180;
 
   // DOM
   const gSlices = document.getElementById('slices');
+  const gLabels = document.getElementById('labels');
   const inputsBox = document.getElementById('inputs');
-  const chipsBox  = document.getElementById('chips');
   const resultEl  = document.getElementById('result');
 
-  // 유틸
-  const makeColors = (n, seed=0) => Array.from({length:n}, (_,i)=>`hsl(${(seed + i*(360/n))%360} 80% 68%)`);
-  const deg2rad = d => d*Math.PI/180;
-
-  // ===== 부채꼴 휠 그리기 (정확히 n등분) =====
+  // 부채꼴 휠 그리기 (정확히 n등분)
   function drawWheel(){
     const n = items.length || 1;
-    const colors = makeColors(n, hueSeed);
+    const colors = pastelColors(n, 210); // 살짝 푸른계열 톤온톤 기준
     gSlices.innerHTML = '';
+    gLabels.innerHTML = '';
     const slice = 360/n;
 
     for(let i=0;i<n;i++){
@@ -107,11 +108,13 @@
       const x2 = 48*Math.cos(deg2rad(end)),   y2 = 48*Math.sin(deg2rad(end));
       const large = slice>180?1:0;
 
+      // 색상 조각
       const p = document.createElementNS('http://www.w3.org/2000/svg','path');
       p.setAttribute('d', `M0 0 L ${x1} ${y1} A 48 48 0 ${large} 1 ${x2} ${y2} Z`);
       p.setAttribute('fill', colors[i]);
       gSlices.appendChild(p);
 
+      // 라벨 (기본은 휠 기준 배치, 멈춘 뒤 수평 보정을 위해 별도 그룹 사용)
       const mid = start + slice/2;
       const rx = 30*Math.cos(deg2rad(mid)), ry = 30*Math.sin(deg2rad(mid));
       const t = document.createElementNS('http://www.w3.org/2000/svg','text');
@@ -122,100 +125,86 @@
       t.setAttribute('fill','#111');
       const label = (items[i] ?? '').toString().trim() || '항목';
       t.textContent = label.length>9 ? label.slice(0,9)+'…' : label;
-      gSlices.appendChild(t);
+      gLabels.appendChild(t);
     }
   }
 
-  // ===== 입력 UI =====
-  function rowTemplate(value='', canRemove=true){
+  // 입력 UI
+  function rowTemplate(value=''){
     const row = document.createElement('div');
     row.className = 'input-row';
     const input = document.createElement('input');
     input.type = 'text';
-    input.placeholder = '예: 병뚜껑';
+    input.placeholder = '수집한 재료를 입력해 주세요. (예: 휴지심)';
     input.value = value;
     const del = document.createElement('button');
     del.textContent = '삭제';
     del.className = 'danger';
-    if(!canRemove){ del.disabled = true; del.style.opacity=.6; }
     row.appendChild(input); row.appendChild(del);
 
     // 실시간 반영
     input.addEventListener('input', syncFromInputs);
-    // Enter로 추가
     input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ addRow(); } });
-    // 삭제
-    del.addEventListener('click', ()=>{
-      if(inputsBox.children.length<=1){ input.value=''; syncFromInputs(); return; }
-      row.remove(); syncFromInputs();
-    });
+    del.addEventListener('click', ()=>{ row.remove(); syncFromInputs(); });
+
     return row;
   }
-
   function renderInputs(){
     inputsBox.innerHTML = '';
-    (items.length? items : ['']).forEach(v=> inputsBox.appendChild(rowTemplate(v,true)));
-    renderChips();
+    (items.length? items : ['']).forEach(v=> inputsBox.appendChild(rowTemplate(v)));
   }
-
   function collectItems(){
     return Array.from(inputsBox.querySelectorAll('input'))
       .map(i=>i.value.trim()).filter(Boolean);
   }
-
   function syncFromInputs(){
     items = collectItems();
     drawWheel();
-    renderChips();
   }
 
-  function renderChips(){
-    chipsBox.innerHTML = '';
-    items.forEach(s=>{
-      const c = document.createElement('div'); c.className='chip'; c.textContent=s;
-      chipsBox.appendChild(c);
-    });
-  }
-
-  // ===== 액션 =====
+  // 액션
   function addRow(value=''){
-    inputsBox.appendChild(rowTemplate(value,true));
+    inputsBox.appendChild(rowTemplate(value));
     inputsBox.lastChild.querySelector('input').focus();
   }
-
   document.getElementById('add').addEventListener('click', ()=> addRow());
-
   document.getElementById('clear').addEventListener('click', ()=>{
-    inputsBox.innerHTML=''; items=[]; renderInputs(); drawWheel(); resultEl.textContent='항목을 입력해 주세요';
+    inputsBox.innerHTML=''; items=[]; drawWheel(); resultEl.textContent='선택된 재료가 여기에 표시됩니다';
   });
-
   document.getElementById('reset').addEventListener('click', ()=>{
-    items=[...INITIAL_ITEMS]; renderInputs(); drawWheel(); resultEl.textContent='처음 상태로 리셋되었습니다';
+    items=[...INITIAL_ITEMS]; renderInputs(); drawWheel(); resultEl.textContent='선택된 재료가 여기에 표시됩니다';
   });
 
-  document.getElementById('shuffle').addEventListener('click', ()=>{
-    hueSeed = Math.floor(Math.random()*360); drawWheel();
-  });
-
-  // 회전 & 결과
+  // 회전 & 결과 (라벨 수평 고정 처리)
+  let currentDeg = 0;
   document.getElementById('spin').addEventListener('click', ()=>{
     if(!items.length){ alert('항목을 1개 이상 입력해 주세요.'); return; }
     const n = items.length, slice = 360/n;
     const spins = 5 + Math.random()*3;
     const offset = Math.random()*360;
-    const deg = spins*360 + offset;
+    currentDeg = spins*360 + offset;
 
-    gSlices.style.transform = `rotate(${deg}deg)`;
+    // 조각과 라벨을 함께 회전
+    gSlices.style.transition = "transform 5s cubic-bezier(.12,.2,0,1)";
+    gLabels.style.transition = "transform 5s cubic-bezier(.12,.2,0,1)";
+    gSlices.style.transform = `rotate(${currentDeg}deg)`;
+    gLabels.style.transform = `rotate(${currentDeg}deg)`;
 
-    const normalized = (deg % 360 + 360) % 360;   // 0~359
-    const fromTop = (normalized) % 360;           // 핀은 12시 방향
+    // 결과 계산
+    const normalized = (currentDeg % 360 + 360) % 360;
+    const fromTop = normalized % 360;           // 핀은 12시 방향
     const index = Math.floor(((360 - fromTop) % 360) / slice) % n;
     const pick = items[index];
 
-    setTimeout(()=>{ resultEl.textContent = `선택된 재료: ${pick}`; }, 5000);
+    // 회전 종료 후: 라벨만 즉시 역회전시켜 "수평 상태" 유지
+    setTimeout(()=>{
+      gLabels.style.transition = "none";
+      gLabels.style.transform = "rotate(0deg)";
+      resultEl.textContent = `선택된 재료: ${pick}`;
+    }, 5000);
   });
 
-  // ===== 초기화 =====
+  // 초기화
   (function init(){
     renderInputs();
     drawWheel();
